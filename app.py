@@ -3,7 +3,11 @@ import streamlit as st
 from db.models import init_db
 from db.queries import get_config
 
-init_db()
+try:
+    init_db()
+except Exception as e:
+    st.error(f"**DB init failed:** {e}")
+    st.stop()
 
 st.set_page_config(
     page_title="OddTracker",
