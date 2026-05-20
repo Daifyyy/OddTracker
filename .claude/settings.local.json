@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip show *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Projekt\\\\OddTracker\" -Force -Recurse)",
+      "Bash(Select-Object -Property FullName, PSIsContainer)",
+      "Bash(Format-Table -AutoSize)",
+      "Bash(Get-ChildItem *)",
+      "PowerShell(if \\(Test-Path \"C:\\\\Projekt\\\\Poisson\\\\\"\\) { Get-ChildItem -Path \"C:\\\\Projekt\\\\Poisson\\\\\" -Recurse | ForEach-Object { $_.FullName } | Sort-Object } else { Write-Host \"Directory does not exist\" })",
+      "Bash(python -c ' *)",
+      "Bash(git init *)",
+      "Bash(git remote *)",
+      "Bash(git fetch *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(python *)",
+      "Bash(pip install *)"
+    ]
+  }
+}

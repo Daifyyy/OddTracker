@@ -1,57 +1,51 @@
-from datetime import datetime, timezone
-
 from db.database import get_connection
 
 
 def detect_line_changes(snapshot_time: str) -> int:
     conn = get_connection()
-    # Find all (match, bookmaker, market, selection) combos in the latest snapshot
-    new_rows = conn.execute(
-        """SELECT match_id, bookmaker, market, selection, line, odds, commence_time
-           FROM odds_snapshots WHERE snapshot_time=?""",
-        (snapshot_time,),
-    ).fetchall()
-
-    inserted = 0
-    with conn:
-        for row in new_rows:
-            # Get the most recent previous snapshot for this combo
-            prev = conn.execute(
-                """SELECT line, odds FROM odds_snapshots
-                   WHERE match_id=? AND bookmaker=? AND market=? AND selection=?
-                     AND snapshot_time < ?
-                   ORDER BY snapshot_time DESC LIMIT 1""",
-                (row["match_id"], row["bookmaker"], row["market"],
-                 row["selection"], snapshot_time),
-            ).fetchone()
-
-            if prev is None:
-                continue
-
-            odds_delta = round(row["odds"] - prev["odds"], 4)
-            line_changed = (prev["line"] != row["line"])
-            odds_changed = abs(odds_delta) >= 0.01
-
-            if not (line_changed or odds_changed):
-                continue
-
-            try:
-                ko = datetime.fromisoformat(row["commence_time"].replace("Z", "+00:00"))
-                now = datetime.now(timezone.utc)
-                minutes_to_kickoff = (ko - now).total_seconds() / 60
-            except Exception:
-                minutes_to_kickoff = None
-
-            conn.execute(
-                """INSERT INTO line_changes
-                   (detected_at, match_id, bookmaker, market, selection,
-                    old_line, new_line, old_odds, new_odds, odds_delta, minutes_to_kickoff)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-                (snapshot_time, row["match_id"], row["bookmaker"], row["market"],
-                 row["selection"], prev["line"], row["line"],
-                 prev["odds"], row["odds"], odds_delta, minutes_to_kickoff),
-            )
-            inserted += 1
-
+    conn.execute(
+        """
+        INSERT INTO line_changes
+            (detected_at, match_id, bookmaker, market, selection,
+             old_line, new_line, old_odds, new_odds, odds_delta, minutes_to_kickoff)
+        SELECT
+            ?,
+            n.match_id,
+            n.bookmaker,
+            n.market,
+            n.selection,
+            prev.line,
+            n.line,
+            prev.odds,
+            n.odds,
+            ROUND(n.odds - prev.odds, 4),
+            ROUND((julianday(n.commence_time) - julianday('now')) * 1440, 1)
+        FROM odds_snapshots n
+        JOIN (
+            SELECT match_id, bookmaker, market, selection, MAX(snapshot_time) AS max_time
+            FROM odds_snapshots
+            WHERE snapshot_time < ?
+            GROUP BY match_id, bookmaker, market, selection
+        ) latest
+            ON  n.match_id  = latest.match_id
+            AND n.bookmaker = latest.bookmaker
+            AND n.market    = latest.market
+            AND n.selection = latest.selection
+        JOIN odds_snapshots prev
+            ON  prev.match_id   = latest.match_id
+            AND prev.bookmaker  = latest.bookmaker
+            AND prev.market     = latest.market
+            AND prev.selection  = latest.selection
+            AND prev.snapshot_time = latest.max_time
+        WHERE n.snapshot_time = ?
+          AND (
+              (prev.line IS NOT n.line)
+              OR ABS(n.odds - prev.odds) >= 0.01
+          )
+        """,
+        (snapshot_time, snapshot_time, snapshot_time),
+    )
+    inserted = conn.execute("SELECT changes()").fetchone()[0]
+    conn.commit()
     conn.close()
     return inserted

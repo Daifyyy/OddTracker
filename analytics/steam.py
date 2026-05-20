@@ -5,52 +5,37 @@ from config import STEAM_MIN_BOOKS, STEAM_MIN_ODDS_DELTA, STEAM_WINDOW_MINUTES
 
 
 def detect_steam_moves(snapshot_time: str) -> int:
-    conn = get_connection()
     window_start = (
         datetime.fromisoformat(snapshot_time.replace("Z", "+00:00"))
         - timedelta(minutes=STEAM_WINDOW_MINUTES)
     ).isoformat()
 
-    changes = conn.execute(
-        """SELECT match_id, market, selection, bookmaker, odds_delta, minutes_to_kickoff
-           FROM line_changes
-           WHERE detected_at >= ? AND detected_at <= ?""",
-        (window_start, snapshot_time),
-    ).fetchall()
-
-    # Group by (match_id, market, selection)
-    groups: dict[tuple, list] = {}
-    for c in changes:
-        key = (c["match_id"], c["market"], c["selection"])
-        groups.setdefault(key, []).append(c)
-
-    inserted = 0
-    with conn:
-        for (match_id, market, selection), items in groups.items():
-            if len(items) < STEAM_MIN_BOOKS:
-                continue
-
-            avg_delta = sum(i["odds_delta"] for i in items) / len(items)
-            if abs(avg_delta) < STEAM_MIN_ODDS_DELTA:
-                continue
-
-            # All must move in the same direction
-            directions = set("up" if i["odds_delta"] > 0 else "down" for i in items)
-            if len(directions) != 1:
-                continue
-
-            direction = directions.pop()
-            minutes_to_kickoff = items[0]["minutes_to_kickoff"]
-
-            conn.execute(
-                """INSERT INTO steam_moves
-                   (detected_at, match_id, market, selection,
-                    bookmaker_count, avg_odds_delta, direction, minutes_to_kickoff)
-                   VALUES(?,?,?,?,?,?,?,?)""",
-                (snapshot_time, match_id, market, selection,
-                 len(items), round(avg_delta, 4), direction, minutes_to_kickoff),
-            )
-            inserted += 1
-
+    conn = get_connection()
+    conn.execute(
+        """
+        INSERT INTO steam_moves
+            (detected_at, match_id, market, selection,
+             bookmaker_count, avg_odds_delta, direction, minutes_to_kickoff)
+        SELECT
+            ?,
+            match_id,
+            market,
+            selection,
+            COUNT(*)                                              AS bookmaker_count,
+            ROUND(AVG(odds_delta), 4)                            AS avg_odds_delta,
+            CASE WHEN AVG(odds_delta) > 0 THEN 'up' ELSE 'down' END AS direction,
+            MIN(minutes_to_kickoff)                              AS minutes_to_kickoff
+        FROM line_changes
+        WHERE detected_at >= ? AND detected_at <= ?
+        GROUP BY match_id, market, selection
+        HAVING COUNT(*) >= ?
+           AND ABS(AVG(odds_delta)) >= ?
+           AND COUNT(CASE WHEN odds_delta > 0 THEN 1 END) IN (0, COUNT(*))
+        """,
+        (snapshot_time, window_start, snapshot_time,
+         STEAM_MIN_BOOKS, STEAM_MIN_ODDS_DELTA),
+    )
+    inserted = conn.execute("SELECT changes()").fetchone()[0]
+    conn.commit()
     conn.close()
     return inserted

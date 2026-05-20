@@ -87,16 +87,18 @@ def touch_preset(name: str) -> None:
 def upsert_matches(events: list[dict]) -> None:
     now = datetime.now(timezone.utc).isoformat()
     conn = get_connection()
-    with conn:
-        for e in events:
-            conn.execute(
-                """INSERT INTO matches(id,sport_key,sport_title,home_team,away_team,
-                                      commence_time,first_seen_at,last_seen_at)
-                   VALUES(?,?,?,?,?,?,?,?)
-                   ON CONFLICT(id) DO UPDATE SET last_seen_at=excluded.last_seen_at""",
-                (e["id"], e["sport_key"], e["sport_title"],
-                 e["home_team"], e["away_team"], e["commence_time"], now, now),
-            )
+    stmts = [
+        (
+            """INSERT INTO matches(id,sport_key,sport_title,home_team,away_team,
+                                  commence_time,first_seen_at,last_seen_at)
+               VALUES(?,?,?,?,?,?,?,?)
+               ON CONFLICT(id) DO UPDATE SET last_seen_at=excluded.last_seen_at""",
+            (e["id"], e["sport_key"], e["sport_title"],
+             e["home_team"], e["away_team"], e["commence_time"], now, now),
+        )
+        for e in events
+    ]
+    conn.execute_batch(stmts)
     conn.close()
 
 
@@ -131,22 +133,19 @@ def insert_snapshots(rows: list[dict]) -> int:
     if not rows:
         return 0
     conn = get_connection()
-    inserted = 0
-    with conn:
-        for r in rows:
-            try:
-                conn.execute(
-                    """INSERT OR IGNORE INTO odds_snapshots
-                       (snapshot_time,match_id,home_team,away_team,commence_time,
-                        bookmaker,market,selection,line,odds)
-                       VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                    (r["snapshot_time"], r["match_id"], r["home_team"], r["away_team"],
-                     r["commence_time"], r["bookmaker"], r["market"],
-                     r["selection"], r.get("line"), r["odds"]),
-                )
-                inserted += conn.execute("SELECT changes()").fetchone()[0]
-            except Exception:
-                pass
+    stmts = [
+        (
+            """INSERT OR IGNORE INTO odds_snapshots
+               (snapshot_time,match_id,home_team,away_team,commence_time,
+                bookmaker,market,selection,line,odds)
+               VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            (r["snapshot_time"], r["match_id"], r["home_team"], r["away_team"],
+             r["commence_time"], r["bookmaker"], r["market"],
+             r["selection"], r.get("line"), r["odds"]),
+        )
+        for r in rows
+    ]
+    inserted = conn.execute_batch(stmts)
     conn.close()
     return inserted
 
