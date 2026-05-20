@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import pandas as pd
+import streamlit as st
 
 from db.database import get_connection, Connection
 
@@ -36,8 +37,14 @@ def set_config(key: str, value: Any) -> None:
     conn.close()
 
 
+def invalidate_queries() -> None:
+    """Clear all cached query results — call after any write that changes displayed data."""
+    st.cache_data.clear()
+
+
 # ── fetch_presets ──────────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=120)
 def get_presets() -> list[dict]:
     conn = get_connection()
     rows = conn.execute(
@@ -102,6 +109,7 @@ def upsert_matches(events: list[dict]) -> None:
     conn.close()
 
 
+@st.cache_data(ttl=60)
 def get_matches_df(sport_key: str | None = None, only_active: bool = False) -> pd.DataFrame:
     conn = get_connection()
     where = []
@@ -150,6 +158,7 @@ def insert_snapshots(rows: list[dict]) -> int:
     return inserted
 
 
+@st.cache_data(ttl=60)
 def get_snapshots_df(match_id: str, market: str | None = None,
                      bookmaker: str | None = None) -> pd.DataFrame:
     conn = get_connection()
@@ -168,6 +177,7 @@ def get_snapshots_df(match_id: str, market: str | None = None,
     return df
 
 
+@st.cache_data(ttl=60)
 def get_opening_odds(match_id: str, market: str) -> pd.DataFrame:
     conn = get_connection()
     df = _df(
@@ -184,6 +194,7 @@ def get_opening_odds(match_id: str, market: str) -> pd.DataFrame:
     return df
 
 
+@st.cache_data(ttl=60)
 def get_closing_odds(match_id: str, market: str) -> pd.DataFrame:
     conn = get_connection()
     df = _df(
@@ -205,6 +216,7 @@ def get_closing_odds(match_id: str, market: str) -> pd.DataFrame:
     return df
 
 
+@st.cache_data(ttl=60)
 def get_latest_odds_per_book(match_id: str, market: str) -> pd.DataFrame:
     conn = get_connection()
     df = _df(
@@ -224,6 +236,7 @@ def get_latest_odds_per_book(match_id: str, market: str) -> pd.DataFrame:
 
 # ── line_changes ───────────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=60)
 def get_line_changes_df(match_id: str | None = None) -> pd.DataFrame:
     conn = get_connection()
     if match_id:
@@ -240,6 +253,7 @@ def get_line_changes_df(match_id: str | None = None) -> pd.DataFrame:
 
 # ── steam_moves ────────────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=60)
 def get_steam_moves_df(hours: int = 48) -> pd.DataFrame:
     conn = get_connection()
     df = _df(
@@ -256,6 +270,7 @@ def get_steam_moves_df(hours: int = 48) -> pd.DataFrame:
 
 # ── clv_records ────────────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=60)
 def get_clv_df(sport_key: str | None = None) -> pd.DataFrame:
     conn = get_connection()
     if sport_key:
@@ -279,6 +294,7 @@ def get_clv_df(sport_key: str | None = None) -> pd.DataFrame:
 
 # ── match_results ──────────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=60)
 def get_results_df() -> pd.DataFrame:
     conn = get_connection()
     df = _df(

@@ -3,17 +3,14 @@ from datetime import datetime, timezone
 
 import streamlit as st
 
-from db.models import init_db
 from db.queries import (
-    get_config, set_config,
+    get_config, set_config, invalidate_queries,
     get_presets, save_preset, delete_preset, touch_preset,
     get_matches_df,
 )
 from fetcher.api_client import OddsAPIClient
 from fetcher.runner import run_once, fetch_scores
 from config import MARKETS_AVAILABLE, BOOKMAKERS_AVAILABLE, BOOKMAKERS_DEFAULT, REGIONS_AVAILABLE
-
-init_db()
 
 st.title("Matches")
 st.caption("Vyber soutěž a trhy, nastav preset a fetchni kurzy.")
@@ -35,6 +32,7 @@ def _save_dialog():
                 st.session_state["_ps_bookmakers"],
                 st.session_state["_ps_regions"],
             )
+            invalidate_queries()
             st.rerun()
         else:
             st.warning("Zadej název.")
@@ -55,6 +53,7 @@ with st.container(border=True):
     with col_d:
         if preset_data and st.button("🗑️ Smazat", use_container_width=True):
             delete_preset(selected_preset)
+            invalidate_queries()
             st.rerun()
 
 # ── Selektory ─────────────────────────────────────────────────────────────────
@@ -80,6 +79,15 @@ def _get_sports():
 
 sports_map = _get_sports()
 
+
+def _set_config_if_changed(key: str, value) -> None:
+    """Write to DB only when value differs from last written value this session."""
+    ss_key = f"_cfg_written_{key}"
+    serialized = json.dumps(value, sort_keys=True, default=str)
+    if st.session_state.get(ss_key) != serialized:
+        set_config(key, value)
+        st.session_state[ss_key] = serialized
+
 with st.container(border=True):
     st.markdown("**Konfigurace sledování**")
     c1, c2 = st.columns(2)
@@ -92,7 +100,7 @@ with st.container(border=True):
             sport_keys, index=sport_idx,
             format_func=lambda k: sports_map.get(k, k),
         )
-        set_config("active_sport_key", sport_key)
+        _set_config_if_changed("active_sport_key", sport_key)
 
         all_markets     = list(MARKETS_AVAILABLE.keys())
         default_markets = _load("active_markets", ["h2h", "totals"])
@@ -102,7 +110,7 @@ with st.container(border=True):
             default=[m for m in default_markets if m in all_markets],
             format_func=lambda k: MARKETS_AVAILABLE.get(k, k),
         )
-        set_config("active_markets", markets)
+        _set_config_if_changed("active_markets", markets)
 
     with c2:
         default_bms = _load("active_bookmakers", BOOKMAKERS_DEFAULT)
@@ -111,7 +119,7 @@ with st.container(border=True):
             BOOKMAKERS_AVAILABLE,
             default=[b for b in default_bms if b in BOOKMAKERS_AVAILABLE],
         )
-        set_config("active_bookmakers", bookmakers)
+        _set_config_if_changed("active_bookmakers", bookmakers)
 
         region_keys   = list(REGIONS_AVAILABLE.keys())
         default_region = _load("regions", "eu")
@@ -121,7 +129,7 @@ with st.container(border=True):
             region_keys, index=region_idx,
             format_func=lambda k: REGIONS_AVAILABLE.get(k, k),
         )
-        set_config("active_regions", regions)
+        _set_config_if_changed("active_regions", regions)
 
 # uložení hodnot pro dialog
 st.session_state.update({
@@ -138,6 +146,7 @@ with st.container(border=True):
             with st.spinner("Stahuji kurzy…"):
                 try:
                     result = run_once(sport_key, markets, regions, bookmakers or None)
+                    invalidate_queries()
                     if preset_data:
                         touch_preset(selected_preset)
                     st.success(
@@ -156,6 +165,7 @@ with st.container(border=True):
             with st.spinner("Stahuji výsledky…"):
                 try:
                     result = fetch_scores(sport_key)
+                    invalidate_queries()
                     st.success(
                         f"✅ {result['matches_updated']} výsledků aktualizováno · "
                         f"zbývá **{result['credits_remaining']}** kreditů"
