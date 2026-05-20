@@ -134,9 +134,10 @@ class _TursoHTTPCursor:
 
 class _TursoHTTPConnection:
     def __init__(self, url: str, token: str):
-        self._url = url.replace("libsql://", "https://") + "/v2/pipeline"
+        # strip() removes accidental newlines/spaces from secrets
+        self._url = url.strip().replace("libsql://", "https://") + "/v2/pipeline"
         self._headers = {
-            "Authorization": f"Bearer {token}",
+            "Authorization": f"Bearer {token.strip()}",
             "Content-Type": "application/json",
         }
         self._last_changes = 0
@@ -174,15 +175,24 @@ class _TursoHTTPConnection:
             reqs.append({"type": "execute", "stmt": stmt})
         reqs.append({"type": "close"})
 
-        resp = requests.post(self._url, json={"requests": reqs},
+        # baton=None required by Hrana v2 protocol
+        resp = requests.post(self._url, json={"baton": None, "requests": reqs},
                              headers=self._headers, timeout=30, verify=False)
-        resp.raise_for_status()
+
+        if not resp.ok:
+            try:
+                detail = resp.json()
+            except Exception:
+                detail = resp.text[:400]
+            raise RuntimeError(f"Turso HTTP {resp.status_code}: {detail}")
 
         cursors = []
-        for res in resp.json()["results"][:-1]:
+        for res in resp.json().get("results", [])[:-1]:
             if res["type"] == "error":
                 if not ignore_errors:
-                    raise Exception(res.get("error", {}).get("message", "Turso error"))
+                    raise RuntimeError(
+                        f"Turso SQL error: {res.get('error', {}).get('message', str(res))}"
+                    )
                 cursors.append(_TursoHTTPCursor(None, [], 0))
                 continue
             r = res["response"]["result"]
