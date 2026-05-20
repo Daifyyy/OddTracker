@@ -1,0 +1,7 @@
+streamlit>=1.54.0
+plotly>=6.6.0
+pandas>=2.2.3
+requests>=2.32.3
+python-dotenv>=1.2.2
+APScheduler>=3.11.2
+libsql-experimental>=0.0.21

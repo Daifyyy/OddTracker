@@ -1,0 +1,9 @@
+.env
+oddtracker.db
+*.db-wal
+*.db-shm
+__pycache__/
+*.pyc
+*.pyo
+.streamlit/secrets.toml
+logs/
