@@ -376,5 +376,5 @@ def test_turso_encode_params(mock_post):
     sent = mock_post.call_args[1]["json"]
     args = sent["requests"][0]["stmt"]["args"]
     assert args[0] == {"type": "integer", "value": "42"}
-    assert args[1] == {"type": "real", "value": "3.14"}
+    assert args[1] == {"type": "float", "value": 3.14}
     assert args[2] == {"type": "text", "value": "hello"}

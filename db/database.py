@@ -151,7 +151,7 @@ class _TursoHTTPConnection:
         if isinstance(val, int):
             return {"type": "integer", "value": str(val)}
         if isinstance(val, float):
-            return {"type": "real", "value": str(val)}
+            return {"type": "float", "value": val}  # Turso: "float" not "real", value is number
         return {"type": "text", "value": str(val)}
 
     @staticmethod
@@ -161,7 +161,7 @@ class _TursoHTTPConnection:
             return None
         if t == "integer":
             return int(cell["value"])
-        if t == "real":
+        if t in ("float", "real"):
             return float(cell["value"])
         return cell.get("value")
 
