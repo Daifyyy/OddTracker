@@ -58,6 +58,15 @@ if df_latest.empty:
     st.info("Žádné aktuální kurzy.")
     st.stop()
 
+all_books = sorted(df_latest["bookmaker"].unique().tolist())
+default_books = ["pinnacle"] if "pinnacle" in all_books else all_books[:1]
+selected_books = st.multiselect(
+    "Bookmakeři", all_books, default=default_books,
+    help="Pinnacle = referenční sharp book. Přidej ostatní pro porovnání.",
+)
+if selected_books:
+    df_latest = df_latest[df_latest["bookmaker"].isin(selected_books)]
+
 # ── Aktuální kurzy: pivot bookmaker × výběr ───────────────────────────────────
 st.markdown("### Aktuální kurzy — poslední snapshot")
 
@@ -113,7 +122,8 @@ selected_sel = st.selectbox("Výběr", selections)
 
 hist = df_snap[
     (df_snap["market"] == market) &
-    (df_snap["selection"] == selected_sel)
+    (df_snap["selection"] == selected_sel) &
+    (df_snap["bookmaker"].isin(selected_books) if selected_books else True)
 ].copy()
 hist["čas"] = hist["snapshot_time"].str[11:16]
 

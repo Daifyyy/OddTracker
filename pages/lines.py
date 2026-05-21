@@ -42,8 +42,10 @@ with st.container(border=True):
             format_func=lambda k: MARKETS_AVAILABLE.get(k, k) if k != "Všechny" else k,
         )
     with fc3:
-        books = ["Všichni"] + (df["bookmaker"].unique().tolist() if not df.empty else [])
-        sel_book = st.selectbox("Bookmaker", books)
+        available_books = df["bookmaker"].unique().tolist() if not df.empty else []
+        books = ["Všichni"] + available_books
+        default_book_idx = books.index("pinnacle") if "pinnacle" in books else 0
+        sel_book = st.selectbox("Bookmaker", books, index=default_book_idx)
 
 if df.empty:
     st.info("Žádné změny ještě nebyly detekovány. Změny se zaznamenají automaticky po každém fetchi.")

@@ -55,7 +55,8 @@ with st.container(border=True):
         )
     with fc3:
         books_all = df_snap[df_snap["market"] == market]["bookmaker"].unique().tolist()
-        selected_books = st.multiselect("Bookmakeři", books_all, default=books_all)
+        default_books = ["pinnacle"] if "pinnacle" in books_all else books_all[:1]
+        selected_books = st.multiselect("Bookmakeři", books_all, default=default_books)
 
 filtered = df_snap[
     (df_snap["market"] == market) &
