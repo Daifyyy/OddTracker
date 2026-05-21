@@ -55,19 +55,20 @@ def get_presets() -> list[dict]:
 
 
 def save_preset(name: str, sport_key: str, competition: str,
-                markets: list, bookmakers: list, regions: str = "eu") -> None:
+                markets: list, bookmakers: list, regions: str = "eu",
+                auto_fetch: bool = False) -> None:
     now = datetime.now(timezone.utc).isoformat()
     conn = get_connection()
     with conn:
         conn.execute(
-            """INSERT INTO fetch_presets(name,sport_key,competition,markets,bookmakers,regions,created_at)
-               VALUES(?,?,?,?,?,?,?)
+            """INSERT INTO fetch_presets(name,sport_key,competition,markets,bookmakers,regions,auto_fetch,created_at)
+               VALUES(?,?,?,?,?,?,?,?)
                ON CONFLICT(name) DO UPDATE SET
                  sport_key=excluded.sport_key, competition=excluded.competition,
                  markets=excluded.markets, bookmakers=excluded.bookmakers,
-                 regions=excluded.regions""",
+                 regions=excluded.regions, auto_fetch=excluded.auto_fetch""",
             (name, sport_key, competition,
-             json.dumps(markets), json.dumps(bookmakers), regions, now),
+             json.dumps(markets), json.dumps(bookmakers), regions, int(auto_fetch), now),
         )
     conn.close()
 

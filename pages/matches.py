@@ -102,6 +102,11 @@ def _preset_dialog(preset_data=None):
         "Region", region_keys, index=region_idx,
         format_func=lambda k: REGIONS_AVAILABLE.get(k, k),
     )
+    auto_fetch = st.toggle(
+        "⚡ Automatický fetch",
+        value=bool(preset_data.get("auto_fetch", 0)) if preset_data else False,
+        help="GitHub Actions bude tento preset fetchovat automaticky dle vzdálenosti od výkopu.",
+    )
 
     if st.button("💾 Uložit", type="primary", disabled=not name.strip() or not markets):
         if original_name and original_name != name.strip():
@@ -110,6 +115,7 @@ def _preset_dialog(preset_data=None):
             name.strip(), sport_key,
             sports_map.get(sport_key, sport_key),
             markets, bookmakers, regions,
+            auto_fetch=auto_fetch,
         )
         invalidate_queries()
         st.rerun()
@@ -170,7 +176,8 @@ for i, item in enumerate(all_items):
             p = item
             with st.container(border=True):
                 sport_title = p.get("competition") or sports_map.get(p["sport_key"], p["sport_key"])
-                st.markdown(f"**{p['name']}**")
+                badge = " ⚡" if p.get("auto_fetch") else ""
+                st.markdown(f"**{p['name']}{badge}**")
                 st.caption(f"🏆 {sport_title}")
 
                 try:
@@ -220,6 +227,38 @@ for i, item in enumerate(all_items):
                         delete_preset(p["name"])
                         invalidate_queries()
                         st.rerun()
+
+st.divider()
+
+# ── Auto-fetch nastavení ───────────────────────────────────────────────────────
+with st.expander("🤖 Auto-fetch nastavení"):
+    st.caption(
+        "GitHub Actions fetchuje automaticky každou hodinu. "
+        "Interval se dynamicky zkracuje čím blíž je výkop — daleko od zápasů se nefetchuje vůbec."
+    )
+    saved_floor = get_config("auto_fetch_credit_floor", 30)
+    new_floor = st.slider(
+        "Credit floor — zastav auto-fetch pod tímto limitem",
+        min_value=10, max_value=100, value=int(saved_floor),
+        help="Ochrana před vyčerpáním kreditů. Doporučeno: 30.",
+    )
+    if new_floor != saved_floor:
+        set_config("auto_fetch_credit_floor", new_floor)
+        st.success(f"Credit floor nastaven na {new_floor}")
+    auto_presets = [p for p in presets if p.get("auto_fetch")]
+    if auto_presets:
+        st.caption(f"⚡ Aktivní auto-fetch presety: {', '.join(p['name'] for p in auto_presets)}")
+        intervals = {
+            "> 48h": "skip", "24–48h": "8h", "12–24h": "4h",
+            "6–12h": "2h", "2–6h": "1h", "0–2h": "30 min",
+        }
+        import pandas as pd
+        st.dataframe(
+            pd.DataFrame(list(intervals.items()), columns=["Do výkopu", "Interval"]),
+            use_container_width=False, hide_index=True,
+        )
+    else:
+        st.info("Žádný preset nemá zapnutý auto-fetch. Uprav preset a zapni '⚡ Automatický fetch'.")
 
 st.divider()
 

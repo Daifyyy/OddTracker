@@ -1,6 +1,20 @@
 from db.database import get_connection
 
 
+def migrate_db() -> None:
+    """Add columns introduced after initial schema — safe to call repeatedly."""
+    conn = get_connection()
+    with conn:
+        for stmt in [
+            "ALTER TABLE fetch_presets ADD COLUMN auto_fetch INTEGER DEFAULT 0",
+        ]:
+            try:
+                conn.execute(stmt)
+            except Exception:
+                pass  # column already exists
+    conn.close()
+
+
 def init_db() -> None:
     conn = get_connection()
     with conn:
@@ -110,3 +124,4 @@ def init_db() -> None:
             );
         """)
     conn.close()
+    migrate_db()
