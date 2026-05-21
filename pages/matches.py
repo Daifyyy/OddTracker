@@ -1,73 +1,21 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import streamlit as st
 
 from db.queries import (
     get_config, set_config, invalidate_queries,
     get_presets, save_preset, delete_preset, touch_preset,
-    get_matches_df,
+    get_matches_df, get_line_changes_df, get_steam_moves_df,
 )
 from fetcher.api_client import OddsAPIClient
 from fetcher.runner import run_once, fetch_scores
 from config import MARKETS_AVAILABLE, BOOKMAKERS_AVAILABLE, BOOKMAKERS_DEFAULT, REGIONS_AVAILABLE
+from pages.utils import sport_label_map
 
 st.title("Matches")
-st.caption("Vyber soutěž a trhy, nastav preset a fetchni kurzy.")
 
-# ── Preset systém ──────────────────────────────────────────────────────────────
-presets      = get_presets()
-preset_names = [p["name"] for p in presets]
-
-@st.dialog("Uložit preset")
-def _save_dialog():
-    name = st.text_input("Název presetu", placeholder="např. Bundesliga H2H+Totals")
-    if st.button("💾 Uložit", type="primary"):
-        if name.strip():
-            save_preset(
-                name.strip(),
-                st.session_state["_ps_sport"],
-                st.session_state["_ps_sport"],
-                st.session_state["_ps_markets"],
-                st.session_state["_ps_bookmakers"],
-                st.session_state["_ps_regions"],
-            )
-            invalidate_queries()
-            st.rerun()
-        else:
-            st.warning("Zadej název.")
-
-with st.container(border=True):
-    col_p, col_s, col_d = st.columns([4, 1, 1])
-    with col_p:
-        selected_preset = st.selectbox(
-            "Preset", ["— nový —"] + preset_names,
-            key="preset_sel", label_visibility="collapsed",
-            help="Vyber uložený preset nebo nastav nový ručně níže.",
-        )
-    preset_data = next((p for p in presets if p["name"] == selected_preset), None)
-
-    with col_s:
-        if st.button("💾 Uložit", use_container_width=True):
-            _save_dialog()
-    with col_d:
-        if preset_data and st.button("🗑️ Smazat", use_container_width=True):
-            delete_preset(selected_preset)
-            invalidate_queries()
-            st.rerun()
-
-# ── Selektory ─────────────────────────────────────────────────────────────────
-def _load(key, default):
-    if preset_data:
-        val = preset_data.get(key)
-        if val and key in ("markets", "bookmakers"):
-            try:
-                return json.loads(val)
-            except Exception:
-                pass
-        return val or default
-    return get_config(key, default)
-
+# ── Sports map ─────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=3600)
 def _get_sports():
     try:
@@ -79,108 +27,349 @@ def _get_sports():
 
 sports_map = _get_sports()
 
+# ── Dashboard metriky ─────────────────────────────────────────────────────────
+df_all     = get_matches_df()
+df_active  = get_matches_df(only_active=True)
+df_steam24 = get_steam_moves_df(hours=24)
+df_lc      = get_line_changes_df()
+credits    = get_config("credits_remaining")
+last_fetch = get_config("last_fetch_at")
 
-def _set_config_if_changed(key: str, value) -> None:
-    """Write to DB only when value differs from last written value this session."""
-    ss_key = f"_cfg_written_{key}"
-    serialized = json.dumps(value, sort_keys=True, default=str)
-    if st.session_state.get(ss_key) != serialized:
-        set_config(key, value)
-        st.session_state[ss_key] = serialized
+changes_24h = 0
+if not df_lc.empty:
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    changes_24h = int((df_lc["detected_at"] >= cutoff).sum())
 
-with st.container(border=True):
-    st.markdown("**Konfigurace sledování**")
-    c1, c2 = st.columns(2)
-    with c1:
-        sport_keys   = list(sports_map.keys())
-        default_sport = _load("active_sport_key", sport_keys[0] if sport_keys else "soccer_germany_bundesliga")
-        sport_idx    = sport_keys.index(default_sport) if default_sport in sport_keys else 0
-        sport_key    = st.selectbox(
-            "Sport / Soutěž",
-            sport_keys, index=sport_idx,
+if last_fetch:
+    fetch_dt = datetime.fromisoformat(last_fetch)
+    fetch_label = fetch_dt.strftime("%d.%m %H:%M")
+else:
+    fetch_label = "—"
+
+credit_icon = "🟢" if (credits or 0) > 100 else ("🟡" if (credits or 0) > 20 else "🔴")
+
+m1, m2, m3, m4, m5 = st.columns(5)
+m1.metric(f"{credit_icon} API kredity", credits if credits is not None else "—")
+m2.metric("Sledované zápasy", len(df_all))
+m3.metric("Aktivní zápasy", len(df_active))
+m4.metric("Změny kurzů (24h)", changes_24h)
+m5.metric("Steam moves (24h)", len(df_steam24))
+if last_fetch:
+    st.caption(f"Poslední fetch: {fetch_label}")
+
+st.divider()
+
+# ── Dialogy ───────────────────────────────────────────────────────────────────
+def _do_fetch(sport_key, markets, regions, bookmakers, preset_name=None):
+    """Provede fetch a uloží výsledek. Vrátí result dict nebo vyhodí výjimku."""
+    result = run_once(sport_key, markets, regions, bookmakers or None)
+    set_config("last_fetch_at", datetime.now(timezone.utc).isoformat())
+    if preset_name:
+        touch_preset(preset_name)
+    invalidate_queries()
+    return result
+
+
+@st.dialog("Preset")
+def _preset_dialog(preset_data=None):
+    original_name = preset_data["name"] if preset_data else None
+    st.markdown(f"### {'Upravit' if original_name else 'Nový'} preset")
+
+    sport_keys = list(sports_map.keys())
+    default_sport = preset_data["sport_key"] if preset_data else sport_keys[0]
+    sport_idx = sport_keys.index(default_sport) if default_sport in sport_keys else 0
+
+    name = st.text_input("Název", value=original_name or "", placeholder="např. Bundesliga H2H")
+    sport_key = st.selectbox(
+        "Sport / Soutěž", sport_keys, index=sport_idx,
+        format_func=lambda k: sports_map.get(k, k),
+    )
+    default_markets = json.loads(preset_data["markets"]) if preset_data else ["h2h", "totals"]
+    markets = st.multiselect(
+        "Trhy", list(MARKETS_AVAILABLE.keys()),
+        default=[m for m in default_markets if m in MARKETS_AVAILABLE],
+        format_func=lambda k: MARKETS_AVAILABLE.get(k, k),
+    )
+    default_bms = json.loads(preset_data["bookmakers"]) if preset_data else BOOKMAKERS_DEFAULT
+    bookmakers = st.multiselect(
+        "Bookmakeři", BOOKMAKERS_AVAILABLE,
+        default=[b for b in default_bms if b in BOOKMAKERS_AVAILABLE],
+    )
+    region_keys = list(REGIONS_AVAILABLE.keys())
+    default_region = preset_data["regions"] if preset_data else "eu"
+    region_idx = region_keys.index(default_region) if default_region in region_keys else 0
+    regions = st.selectbox(
+        "Region", region_keys, index=region_idx,
+        format_func=lambda k: REGIONS_AVAILABLE.get(k, k),
+    )
+
+    if st.button("💾 Uložit", type="primary", disabled=not name.strip() or not markets):
+        if original_name and original_name != name.strip():
+            delete_preset(original_name)
+        save_preset(
+            name.strip(), sport_key,
+            sports_map.get(sport_key, sport_key),
+            markets, bookmakers, regions,
+        )
+        invalidate_queries()
+        st.rerun()
+
+
+# ── Preset karty ──────────────────────────────────────────────────────────────
+presets = get_presets()
+
+header_col, batch_col = st.columns([3, 1])
+with header_col:
+    st.markdown("### Presety")
+with batch_col:
+    if presets and st.button("🔄 Fetch vše", use_container_width=True,
+                              help="Fetchne všechny presety postupně."):
+        bar = st.progress(0, text="Fetching…")
+        total_snap, total_credits = 0, 0
+        errors = []
+        for i, p in enumerate(presets):
+            bar.progress((i) / len(presets), text=f"Fetching {p['name']}…")
+            try:
+                r = _do_fetch(
+                    p["sport_key"],
+                    json.loads(p["markets"]),
+                    p["regions"],
+                    json.loads(p["bookmakers"]),
+                    preset_name=p["name"],
+                )
+                total_snap    += r["snapshots_stored"]
+                total_credits += r["credits_used"]
+            except Exception as exc:
+                errors.append(f"{p['name']}: {exc}")
+        bar.progress(1.0, text="Hotovo")
+        if errors:
+            st.error("Chyby: " + " · ".join(errors))
+        else:
+            last_credits = get_config("credits_remaining")
+            st.success(
+                f"✅ Fetchnuto {len(presets)} presetů · "
+                f"{total_snap} snapshotů · "
+                f"použito {total_credits} kreditů · "
+                f"zbývá **{last_credits}**"
+            )
+
+# Karty: presety + "nový preset" karta
+all_items = presets + [None]
+cols = st.columns(3)
+
+for i, item in enumerate(all_items):
+    with cols[i % 3]:
+        if item is None:
+            with st.container(border=True):
+                st.markdown("&nbsp;")
+                st.markdown("&nbsp;")
+                if st.button("➕ Nový preset", use_container_width=True):
+                    _preset_dialog()
+                st.markdown("&nbsp;")
+        else:
+            p = item
+            with st.container(border=True):
+                sport_title = p.get("competition") or sports_map.get(p["sport_key"], p["sport_key"])
+                st.markdown(f"**{p['name']}**")
+                st.caption(f"🏆 {sport_title}")
+
+                try:
+                    mkt_list = json.loads(p["markets"])
+                    st.caption("📋 " + " · ".join(MARKETS_AVAILABLE.get(m, m) for m in mkt_list))
+                except Exception:
+                    pass
+
+                try:
+                    bm_list = json.loads(p["bookmakers"])
+                    bm_str = ", ".join(bm_list[:3]) + ("…" if len(bm_list) > 3 else "")
+                    st.caption(f"🏦 {bm_str}")
+                except Exception:
+                    pass
+
+                if p.get("last_used_at"):
+                    ts = p["last_used_at"][:16].replace("T", " ")
+                    st.caption(f"🕐 {ts}")
+                else:
+                    st.caption("🕐 —")
+
+                fc, fe, fd = st.columns([3, 1, 1])
+                with fc:
+                    fetch_key = f"fetch_preset_{p['name']}"
+                    if st.button("🔄 Fetch", key=fetch_key, use_container_width=True, type="primary"):
+                        with st.spinner(f"Fetching {p['name']}…"):
+                            try:
+                                r = _do_fetch(
+                                    p["sport_key"],
+                                    json.loads(p["markets"]),
+                                    p["regions"],
+                                    json.loads(p["bookmakers"]),
+                                    preset_name=p["name"],
+                                )
+                                st.success(
+                                    f"✅ {r['snapshots_stored']} snap · "
+                                    f"{r['credits_used']} kr · "
+                                    f"zbývá {r['credits_remaining']}"
+                                )
+                            except Exception as exc:
+                                st.error(str(exc))
+                with fe:
+                    if st.button("✏️", key=f"edit_{p['name']}", help="Upravit preset"):
+                        _preset_dialog(preset_data=p)
+                with fd:
+                    if st.button("🗑️", key=f"del_{p['name']}", help="Smazat preset"):
+                        delete_preset(p["name"])
+                        invalidate_queries()
+                        st.rerun()
+
+st.divider()
+
+# ── Jednorázový fetch ──────────────────────────────────────────────────────────
+with st.expander("⚙️ Jednorázový fetch (bez presetu)"):
+    sport_keys = list(sports_map.keys())
+    saved_sport = get_config("active_sport_key", sport_keys[0] if sport_keys else "soccer_germany_bundesliga")
+    sport_idx   = sport_keys.index(saved_sport) if saved_sport in sport_keys else 0
+
+    ec1, ec2 = st.columns(2)
+    with ec1:
+        adhoc_sport = st.selectbox(
+            "Sport / Soutěž", sport_keys, index=sport_idx,
             format_func=lambda k: sports_map.get(k, k),
+            key="adhoc_sport",
         )
-        _set_config_if_changed("active_sport_key", sport_key)
+        set_config("active_sport_key", adhoc_sport)
 
-        all_markets     = list(MARKETS_AVAILABLE.keys())
-        default_markets = _load("active_markets", ["h2h", "totals"])
-        markets = st.multiselect(
-            "Trhy",
-            all_markets,
-            default=[m for m in default_markets if m in all_markets],
+        saved_markets = get_config("active_markets", ["h2h", "totals"])
+        adhoc_markets = st.multiselect(
+            "Trhy", list(MARKETS_AVAILABLE.keys()),
+            default=[m for m in saved_markets if m in MARKETS_AVAILABLE],
             format_func=lambda k: MARKETS_AVAILABLE.get(k, k),
+            key="adhoc_markets",
         )
-        _set_config_if_changed("active_markets", markets)
+        set_config("active_markets", adhoc_markets)
 
-    with c2:
-        default_bms = _load("active_bookmakers", BOOKMAKERS_DEFAULT)
-        bookmakers  = st.multiselect(
-            "Bookmakeři",
-            BOOKMAKERS_AVAILABLE,
-            default=[b for b in default_bms if b in BOOKMAKERS_AVAILABLE],
+    with ec2:
+        saved_bms = get_config("active_bookmakers", BOOKMAKERS_DEFAULT)
+        adhoc_books = st.multiselect(
+            "Bookmakeři", BOOKMAKERS_AVAILABLE,
+            default=[b for b in saved_bms if b in BOOKMAKERS_AVAILABLE],
+            key="adhoc_books",
         )
-        _set_config_if_changed("active_bookmakers", bookmakers)
+        set_config("active_bookmakers", adhoc_books)
 
-        region_keys   = list(REGIONS_AVAILABLE.keys())
-        default_region = _load("regions", "eu")
-        region_idx    = region_keys.index(default_region) if default_region in region_keys else 0
-        regions = st.selectbox(
-            "Region",
-            region_keys, index=region_idx,
+        region_keys = list(REGIONS_AVAILABLE.keys())
+        saved_region = get_config("regions", "eu")
+        region_idx  = region_keys.index(saved_region) if saved_region in region_keys else 0
+        adhoc_region = st.selectbox(
+            "Region", region_keys, index=region_idx,
             format_func=lambda k: REGIONS_AVAILABLE.get(k, k),
+            key="adhoc_region",
         )
-        _set_config_if_changed("active_regions", regions)
+        set_config("active_regions", adhoc_region)
 
-# uložení hodnot pro dialog
-st.session_state.update({
-    "_ps_sport": sport_key, "_ps_markets": markets,
-    "_ps_bookmakers": bookmakers, "_ps_regions": regions,
-})
-
-# ── Fetch akce ────────────────────────────────────────────────────────────────
-with st.container(border=True):
-    st.markdown("**Stažení dat**")
-    cf1, cf2 = st.columns(2)
-    with cf1:
-        if st.button("🔄 Fetch odds", type="primary", use_container_width=True, disabled=not markets):
+    ba1, ba2, ba3 = st.columns([2, 2, 2])
+    with ba1:
+        if st.button("🔄 Fetch", type="primary", use_container_width=True,
+                     disabled=not adhoc_markets, key="adhoc_fetch"):
             with st.spinner("Stahuji kurzy…"):
                 try:
-                    result = run_once(sport_key, markets, regions, bookmakers or None)
-                    invalidate_queries()
-                    if preset_data:
-                        touch_preset(selected_preset)
+                    r = _do_fetch(adhoc_sport, adhoc_markets, adhoc_region, adhoc_books or None)
                     st.success(
-                        f"✅ {result['snapshots_stored']} snapshotů · "
-                        f"{result['events_fetched']} zápasů · "
-                        f"použito {result['credits_used']} kreditů · "
-                        f"zbývá **{result['credits_remaining']}**"
+                        f"✅ {r['snapshots_stored']} snapshotů · "
+                        f"{r['events_fetched']} zápasů · "
+                        f"použito {r['credits_used']} kreditů · "
+                        f"zbývá **{r['credits_remaining']}**"
                     )
                 except Exception as exc:
                     st.error(f"Chyba: {exc}")
-        st.caption("Stáhne aktuální kurzy a uloží snapshot.")
-
-    with cf2:
-        if st.button("📋 Fetch výsledky", use_container_width=True,
-                     help="Stáhne výsledky dokončených zápasů ze /scores endpointu."):
+    with ba2:
+        if st.button("💾 Uložit jako preset", use_container_width=True,
+                     disabled=not adhoc_markets, key="adhoc_save"):
+            _preset_dialog()
+    with ba3:
+        if st.button("📋 Fetch výsledky", use_container_width=True, key="adhoc_scores"):
             with st.spinner("Stahuji výsledky…"):
                 try:
-                    result = fetch_scores(sport_key)
+                    r = fetch_scores(adhoc_sport)
                     invalidate_queries()
                     st.success(
-                        f"✅ {result['matches_updated']} výsledků aktualizováno · "
-                        f"zbývá **{result['credits_remaining']}** kreditů"
+                        f"✅ {r['matches_updated']} výsledků · "
+                        f"zbývá **{r['credits_remaining']}** kreditů"
                     )
                 except Exception as exc:
                     st.error(f"Chyba: {exc}")
-        st.caption("Načte skóre po skončení zápasů (nutné pro Analytics).")
+
+st.divider()
+
+# ── Hot matches ───────────────────────────────────────────────────────────────
+if not df_all.empty:
+    now = datetime.now(timezone.utc)
+    df_check = df_all[df_all["is_completed"] == 0].copy()
+    if not df_check.empty:
+        df_check["commence_dt"] = df_check["commence_time"].apply(
+            lambda x: datetime.fromisoformat(x.replace("Z", "+00:00"))
+        )
+        df_check["hours_to_ko"] = df_check["commence_dt"].apply(
+            lambda dt: (dt - now).total_seconds() / 3600
+        )
+
+        steam_match_ids = set(df_steam24["match_id"].tolist()) if not df_steam24.empty else set()
+
+        hot = []
+        for _, row in df_check.iterrows():
+            badges = []
+            if row["id"] in steam_match_ids:
+                badges.append("🚨 Steam")
+            if 0 < row["hours_to_ko"] <= 3:
+                badges.append("⏰ Brzy")
+            if badges:
+                hot.append({
+                    "Zápas": f"{row['home_team']} vs {row['away_team']}",
+                    "Výkop": f"{row['hours_to_ko']:.1f}h",
+                    "Signály": "  ".join(badges),
+                })
+
+        if hot:
+            import pandas as pd
+            st.markdown("### 🔥 Hot matches")
+            st.dataframe(
+                pd.DataFrame(hot),
+                use_container_width=True, hide_index=True,
+            )
+            st.divider()
 
 # ── Přehled zápasů ────────────────────────────────────────────────────────────
 st.markdown("### Sledované zápasy")
 
-df = get_matches_df(sport_key)
-if df.empty:
-    st.info("Žádné zápasy. Klikni na **Fetch odds** pro načtení.")
+labels = sport_label_map(df_all)
+
+if df_all.empty:
+    st.info("Žádné zápasy. Fetchni první preset nebo použij jednorázový fetch.")
 else:
+    with st.container(border=True):
+        fc1, fc2, fc3 = st.columns(3)
+        with fc1:
+            available_sports = sorted(labels.keys())
+            filter_sport = st.multiselect(
+                "Filtrovat soutěž", available_sports,
+                format_func=lambda k: labels.get(k, k),
+                placeholder="Všechny soutěže",
+            )
+        with fc2:
+            filter_status = st.selectbox("Status", ["Vše", "Nadcházející", "Dokončené"])
+        with fc3:
+            filter_hours = st.number_input(
+                "Do KO max (h)", min_value=0, max_value=999, value=0,
+                help="0 = bez omezení",
+            )
+
+    df = df_all.copy()
+    if filter_sport:
+        df = df[df["sport_key"].isin(filter_sport)]
+    if filter_status == "Nadcházející":
+        df = df[df["is_completed"] == 0]
+    elif filter_status == "Dokončené":
+        df = df[df["is_completed"] == 1]
+
     now = datetime.now(timezone.utc)
     df["commence_dt"] = df["commence_time"].apply(
         lambda x: datetime.fromisoformat(x.replace("Z", "+00:00"))
@@ -188,19 +377,24 @@ else:
     df["Do KO (h)"] = df["commence_dt"].apply(
         lambda dt: round((dt - now).total_seconds() / 3600, 1) if dt > now else None
     )
+
+    if filter_hours > 0:
+        df = df[df["Do KO (h)"].apply(lambda h: h is not None and 0 <= h <= filter_hours)]
+
     df["Status"] = df.apply(
         lambda r: "✅ Hotovo" if r["is_completed"] else (
             "🟡 Brzy" if 0 < (r["Do KO (h)"] or 99) < 2 else "⏳ Nadcházející"
         ), axis=1
     )
-    df["Zápas"]       = df["home_team"] + " vs " + df["away_team"]
-    df["Výkop (UTC)"] = df["commence_time"].str[:16].str.replace("T", " ")
+    df["Soutěž"]         = df["sport_key"].map(lambda k: labels.get(k, k))
+    df["Zápas"]          = df["home_team"] + " vs " + df["away_team"]
+    df["Výkop (UTC)"]    = df["commence_time"].str[:16].str.replace("T", " ")
     df["Poslední fetch"] = df["last_seen_at"].str[:16].str.replace("T", " ")
 
     st.dataframe(
-        df[["Zápas", "Výkop (UTC)", "Do KO (h)", "Status", "Poslední fetch"]],
+        df[["Soutěž", "Zápas", "Výkop (UTC)", "Do KO (h)", "Status", "Poslední fetch"]],
         use_container_width=True, hide_index=True,
     )
     total = len(df)
     done  = int(df["is_completed"].sum())
-    st.caption(f"{total} zápasů celkem · {done} dokončeno · {total - done} nadcházejících")
+    st.caption(f"{total} zápasů · {done} dokončeno · {total - done} nadcházejících")

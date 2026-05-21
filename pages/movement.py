@@ -2,26 +2,40 @@ import pandas as pd
 import streamlit as st
 
 from db.queries import (
-    get_matches_df, get_snapshots_df, get_config,
+    get_matches_df, get_snapshots_df,
     get_opening_odds, get_closing_odds, get_line_changes_df,
 )
 from config import MARKETS_AVAILABLE
+from pages.utils import highlight_pivot, sport_label_map
 
 st.title("Vývoj kurzů")
 st.caption("Tabulkový přehled pohybu kurzů v čase pro vybraný zápas a trh.")
 
-sport_key  = get_config("active_sport_key", "soccer_germany_bundesliga")
-df_matches = get_matches_df(sport_key)
+df_all = get_matches_df()
 
-if df_matches.empty:
+if df_all.empty:
     st.info("Žádné zápasy. Přejdi na **Matches** a fetchni kurzy.")
     st.stop()
 
-df_matches["label"] = df_matches["home_team"] + " vs " + df_matches["away_team"]
+labels = sport_label_map(df_all)
 
 # ── Filtry ────────────────────────────────────────────────────────────────────
 with st.container(border=True):
-    fc1, fc2, fc3 = st.columns(3)
+    fc0, fc1, fc2, fc3 = st.columns([2, 3, 2, 3])
+    with fc0:
+        available_sports = sorted(labels.keys())
+        sport_filter = st.multiselect(
+            "Soutěž", available_sports,
+            format_func=lambda k: labels.get(k, k),
+            placeholder="Všechny",
+        )
+    df_matches = df_all[df_all["sport_key"].isin(sport_filter)] if sport_filter else df_all
+    if df_matches.empty:
+        st.info("Žádné zápasy pro vybranou soutěž.")
+        st.stop()
+    df_matches = df_matches.copy()
+    df_matches["label"] = df_matches["home_team"] + " vs " + df_matches["away_team"]
+
     with fc1:
         idx = st.selectbox(
             "Zápas",
@@ -65,23 +79,11 @@ filtered["čas"] = filtered["snapshot_time"].str[11:16]
 pivot = filtered.pivot_table(
     index="čas", columns="col", values="odds", aggfunc="first"
 )
-pivot.index.name  = "Čas (UTC)"
+pivot.index.name   = "Čas (UTC)"
 pivot.columns.name = ""
 
-def _highlight(df: pd.DataFrame) -> pd.DataFrame:
-    styles = pd.DataFrame("", index=df.index, columns=df.columns)
-    for col in df.columns:
-        for i in range(1, len(df)):
-            prev, curr = df[col].iloc[i - 1], df[col].iloc[i]
-            if pd.notna(prev) and pd.notna(curr) and curr != prev:
-                styles.iloc[i][col] = (
-                    "background-color:#1b3a2a;font-weight:bold" if curr > prev
-                    else "background-color:#3a1b1b;font-weight:bold"
-                )
-    return styles
-
 st.dataframe(
-    pivot.style.apply(_highlight, axis=None).format("{:.2f}", na_rep="—"),
+    pivot.style.apply(highlight_pivot, axis=None).format("{:.2f}", na_rep="—"),
     use_container_width=True,
 )
 st.caption("🟢 Kurz vzrostl &nbsp;|&nbsp; 🔴 Kurz klesl &nbsp;|&nbsp; Každý řádek = jeden snapshot")
@@ -115,13 +117,15 @@ if not df_open.empty and not df_close.empty:
 
     st.dataframe(
         display.style
-            .applymap(_color_pohyb, subset=["Pohyb"])
+            .map(_color_pohyb, subset=["Pohyb"])
             .format({"Opening": "{:.2f}", "Closing": "{:.2f}"}, na_rep="—"),
         use_container_width=True, hide_index=True,
     )
     st.caption("Opening = první zaznamenaný kurz · Closing = poslední kurz před výkopem")
+elif not df_open.empty:
+    st.info("Closing kurzy nejsou k dispozici — potřebné jsou snapshoty pořízené před výkopem zápasu.")
 else:
-    st.info("Opening vs Closing bude k dispozici po dokončení zápasu.")
+    st.info("Žádné snapshoty pro tuto kombinaci.")
 
 # ── Detekované změny ──────────────────────────────────────────────────────────
 df_lc = get_line_changes_df(match_id)
@@ -153,6 +157,6 @@ if not df_lc.empty:
             return ""
 
     st.dataframe(
-        display_lc.style.applymap(_color_delta, subset=["Δ kurz"]),
+        display_lc.style.map(_color_delta, subset=["Δ kurz"]),
         use_container_width=True, hide_index=True,
     )

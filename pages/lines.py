@@ -1,17 +1,28 @@
 import streamlit as st
 
-from db.queries import get_matches_df, get_line_changes_df, get_config
+from db.queries import get_matches_df, get_line_changes_df
 from config import MARKETS_AVAILABLE
+from pages.utils import sport_label_map
 
 st.title("Změny kurzů")
 st.caption("Přehled detekovaných pohybů kurzů a změn linií mezi snapshoty.")
 
-sport_key  = get_config("active_sport_key", "soccer_germany_bundesliga")
-df_matches = get_matches_df(sport_key)
+df_all = get_matches_df()
+labels = sport_label_map(df_all)
 
 # ── Filtry ────────────────────────────────────────────────────────────────────
 with st.container(border=True):
-    fc1, fc2, fc3 = st.columns(3)
+    fc0, fc1, fc2, fc3 = st.columns(4)
+
+    with fc0:
+        available_sports = sorted(labels.keys())
+        sport_filter = st.multiselect(
+            "Soutěž", available_sports,
+            format_func=lambda k: labels.get(k, k),
+            placeholder="Všechny",
+        )
+
+    df_matches = df_all[df_all["sport_key"].isin(sport_filter)] if sport_filter else df_all
 
     match_options = {"Všechny zápasy": None}
     if not df_matches.empty:
@@ -26,8 +37,10 @@ with st.container(border=True):
 
     with fc2:
         markets = ["Všechny"] + (df["market"].unique().tolist() if not df.empty else [])
-        sel_market = st.selectbox("Trh", markets, format_func=lambda k: MARKETS_AVAILABLE.get(k, k) if k != "Všechny" else k)
-
+        sel_market = st.selectbox(
+            "Trh", markets,
+            format_func=lambda k: MARKETS_AVAILABLE.get(k, k) if k != "Všechny" else k,
+        )
     with fc3:
         books = ["Všichni"] + (df["bookmaker"].unique().tolist() if not df.empty else [])
         sel_book = st.selectbox("Bookmaker", books)
@@ -74,10 +87,17 @@ def _color_delta(val) -> str:
     except Exception:
         return ""
 
-st.dataframe(
-    display.style.applymap(_color_delta, subset=["Δ kurz"]),
-    use_container_width=True, hide_index=True,
-)
+col_tbl, col_exp = st.columns([5, 1])
+with col_tbl:
+    st.dataframe(
+        display.style.map(_color_delta, subset=["Δ kurz"]),
+        use_container_width=True, hide_index=True,
+    )
+with col_exp:
+    st.download_button(
+        "⬇️ CSV", display.to_csv(index=False).encode("utf-8"),
+        "line_changes.csv", "text/csv", use_container_width=True,
+    )
 st.caption(
     "Δ kurz = rozdíl mezi novým a starým kurzem · "
     "Záporný Δ = kurz klesl (bookmaker snižuje nabídku, šarpci sázejí) · "

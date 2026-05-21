@@ -2,7 +2,7 @@ import streamlit as st
 
 from db.queries import get_steam_moves_df
 
-st.title("Steam Moves")
+st.title("Steam moves")
 st.caption("Detekce koordinovaných pohybů kurzů u více bookmakrů současně — signál ostrých peněz.")
 
 # ── Filtry ────────────────────────────────────────────────────────────────────
@@ -60,10 +60,17 @@ display.columns = [
 def _color_dir(val: str) -> str:
     return "color:#ef5350;font-weight:bold" if val == "down" else "color:#4caf50;font-weight:bold"
 
-st.dataframe(
-    display.style.applymap(_color_dir, subset=["Směr"]),
-    use_container_width=True, hide_index=True,
-)
+col_tbl, col_exp = st.columns([5, 1])
+with col_tbl:
+    st.dataframe(
+        display.style.map(_color_dir, subset=["Směr"]),
+        use_container_width=True, hide_index=True,
+    )
+with col_exp:
+    st.download_button(
+        "⬇️ CSV", display.to_csv(index=False).encode("utf-8"),
+        "steam_moves.csv", "text/csv", use_container_width=True,
+    )
 st.caption(
     "🔴 **Dolů** = kurz klesl u více bookmakrů → typicky ostrá sázka na daný výběr · "
     "🟢 **Nahoru** = kurz vzrostl → veřejné peníze nebo vyrovnání pozice"
