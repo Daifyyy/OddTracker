@@ -9,7 +9,7 @@ from config import MARKETS_AVAILABLE
 from pages.utils import highlight_pivot, sport_label_map, to_local_str
 
 st.title("Vývoj kurzů")
-st.caption("Tabulkový přehled pohybu kurzů v čase pro vybraný zápas a trh.")
+st.caption("Pinnacle — pohyb kurzů v čase pro vybraný zápas a trh.")
 
 df_all = get_matches_df()
 
@@ -21,7 +21,7 @@ labels = sport_label_map(df_all)
 
 # ── Filtry ────────────────────────────────────────────────────────────────────
 with st.container(border=True):
-    fc0, fc1, fc2, fc3 = st.columns([2, 3, 2, 3])
+    fc0, fc1, fc2 = st.columns([2, 3, 2])
     with fc0:
         available_sports = sorted(labels.keys())
         sport_filter = st.multiselect(
@@ -53,14 +53,10 @@ with st.container(border=True):
             df_snap["market"].unique().tolist(),
             format_func=lambda k: MARKETS_AVAILABLE.get(k, k),
         )
-    with fc3:
-        books_all = df_snap[df_snap["market"] == market]["bookmaker"].unique().tolist()
-        default_books = ["pinnacle"] if "pinnacle" in books_all else books_all[:1]
-        selected_books = st.multiselect("Bookmakeři", books_all, default=default_books)
 
 filtered = df_snap[
     (df_snap["market"] == market) &
-    (df_snap["bookmaker"].isin(selected_books))
+    (df_snap["bookmaker"] == "pinnacle")
 ].copy()
 
 # Oříznout na snapshoty před výkopem — post-kickoff kurzy nejsou closing
@@ -84,7 +80,7 @@ if available_lines:
 # ── Pivot tabulka: čas × bookmaker·výběr ──────────────────────────────────────
 st.markdown("### Kurzy v čase")
 
-filtered["col"] = filtered["bookmaker"] + " · " + filtered["selection"]
+filtered["col"] = filtered["selection"]
 
 filtered["čas"] = to_local_str(filtered["snapshot_time"])
 _tz_label = "Čas (Praha)"
