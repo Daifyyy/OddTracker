@@ -67,14 +67,19 @@ if filtered.empty:
     st.info("Žádná data pro tento filtr.")
     st.stop()
 
+available_lines = sorted(filtered["line"].dropna().unique().tolist())
+if available_lines:
+    selected_line = st.selectbox(
+        "Linie", available_lines,
+        format_func=lambda x: f"{x:g}",
+        key="mov_line",
+    )
+    filtered = filtered[filtered["line"] == selected_line]
+
 # ── Pivot tabulka: čas × bookmaker·výběr ──────────────────────────────────────
 st.markdown("### Kurzy v čase")
 
 filtered["col"] = filtered["bookmaker"] + " · " + filtered["selection"]
-if filtered["line"].notna().any():
-    filtered["col"] = filtered["col"] + " @" + filtered["line"].apply(
-        lambda x: str(x) if x is not None else ""
-    )
 
 filtered["čas"] = to_local_str(filtered["snapshot_time"])
 _tz_label = "Čas (Praha)"

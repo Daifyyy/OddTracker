@@ -75,12 +75,17 @@ with tab_odds:
         if filt.empty:
             st.info("Žádná data pro tuto kombinaci.")
         else:
-            def _sel_label(row):
-                if row["line"] is not None:
-                    return f"{row['selection']} ({row['line']:g})"
-                return row["selection"]
+            available_lines = sorted(filt["line"].dropna().unique().tolist())
+            selected_line = None
+            if available_lines:
+                selected_line = st.selectbox(
+                    "Linie", available_lines,
+                    format_func=lambda x: f"{x:g}",
+                    key="det_line",
+                )
+                filt = filt[filt["line"] == selected_line]
 
-            filt["sel_col"] = filt.apply(_sel_label, axis=1)
+            filt["sel_col"] = filt["selection"]
             filt["čas"] = to_local_str(filt["snapshot_time"])
             _tz_label = "Čas (Praha)"
 
@@ -102,8 +107,12 @@ with tab_odds:
             df_open  = get_opening_odds(match_id, market)
             df_close = get_closing_odds(match_id, market)
 
-            df_open_b  = df_open[df_open["bookmaker"] == bookmaker] if not df_open.empty else pd.DataFrame()
-            df_close_b = df_close[df_close["bookmaker"] == bookmaker] if not df_close.empty else pd.DataFrame()
+            df_open_b  = df_open[df_open["bookmaker"] == bookmaker].copy() if not df_open.empty else pd.DataFrame()
+            df_close_b = df_close[df_close["bookmaker"] == bookmaker].copy() if not df_close.empty else pd.DataFrame()
+            if selected_line is not None and not df_open_b.empty:
+                df_open_b = df_open_b[df_open_b["line"] == selected_line]
+            if selected_line is not None and not df_close_b.empty:
+                df_close_b = df_close_b[df_close_b["line"] == selected_line]
 
             if not df_open_b.empty and not df_close_b.empty:
                 merged = df_open_b.merge(
