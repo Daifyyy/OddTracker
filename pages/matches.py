@@ -94,6 +94,7 @@ def _preset_dialog(preset_data=None):
     bookmakers = st.multiselect(
         "Bookmakeři", BOOKMAKERS_AVAILABLE,
         default=[b for b in default_bms if b in BOOKMAKERS_AVAILABLE],
+        help="Doporučeno: pinnacle + williamhill + nordicbet — minimum pro detekci steam moves (3 books).",
     )
     region_keys = list(REGIONS_AVAILABLE.keys())
     default_region = preset_data["regions"] if preset_data else "eu"

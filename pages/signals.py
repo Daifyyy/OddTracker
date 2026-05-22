@@ -7,7 +7,11 @@ from config import MARKETS_AVAILABLE
 from pages.utils import sport_label_map
 
 st.title("Pohyby kurzů")
-st.caption("Pinnacle opening → aktuální kurz pro všechny aktivní zápasy. Seřazeno: největší pokles nahoře.")
+st.caption(
+    "**Pinnacle** opening → aktuální kurz pro všechny aktivní zápasy. "
+    "Steam moves jsou detekovány přes Pinnacle + WilliamHill + NordicBet. "
+    "Seřazeno: největší pokles nahoře."
+)
 
 df = get_movement_overview()
 

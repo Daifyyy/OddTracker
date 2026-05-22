@@ -27,8 +27,9 @@ BOOKMAKERS_AVAILABLE = [
     "suprabets",
 ]
 
-# Default bookmakers pre-selected in UI — sharp books first
-BOOKMAKERS_DEFAULT = ["pinnacle", "williamhill", "nordicbet", "betsson", "marathonbet"]
+# Default bookmakers for fetch — Pinnacle (reference) + 2 soft books for steam detection.
+# Steam requires min 3 books; this trio is the recommended minimum.
+BOOKMAKERS_DEFAULT = ["pinnacle", "williamhill", "nordicbet"]
 
 REGIONS_AVAILABLE = {
     "eu": "Europe",
