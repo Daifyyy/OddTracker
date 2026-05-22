@@ -231,6 +231,28 @@ def get_closing_odds(match_id: str, market: str) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=60)
+def get_last_odds(match_id: str, market: str) -> pd.DataFrame:
+    """Last recorded odds for a match/market — no kickoff-time filter.
+
+    Use this for display (pivot = last row should match this).
+    Use get_closing_odds() only for CLV calculation (needs pre-kickoff value).
+    """
+    conn = get_connection()
+    df = _df(
+        conn,
+        """SELECT bookmaker, market, selection, line, odds, snapshot_time
+           FROM odds_snapshots
+           WHERE match_id=? AND market=?
+             AND snapshot_time=(
+               SELECT MAX(snapshot_time) FROM odds_snapshots
+               WHERE match_id=? AND market=?)""",
+        (match_id, market, match_id, market),
+    )
+    conn.close()
+    return df
+
+
+@st.cache_data(ttl=60)
 def get_latest_odds_per_book(match_id: str, market: str) -> pd.DataFrame:
     conn = get_connection()
     df = _df(

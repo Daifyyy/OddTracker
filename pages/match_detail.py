@@ -2,7 +2,7 @@ import pandas as pd
 import streamlit as st
 
 from db.queries import (
-    get_matches_df, get_snapshots_df, get_opening_odds, get_closing_odds,
+    get_matches_df, get_snapshots_df, get_opening_odds, get_last_odds,
     get_line_changes_df, get_steam_moves_df, get_clv_df,
 )
 from config import MARKETS_AVAILABLE
@@ -105,7 +105,7 @@ with tab_odds:
             st.caption("🟢 Kurz vzrostl  |  🔴 Kurz klesl  |  Každý řádek = jeden fetch")
 
             df_open  = get_opening_odds(match_id, market)
-            df_close = get_closing_odds(match_id, market)
+            df_close = get_last_odds(match_id, market)
 
             df_open_b  = df_open[df_open["bookmaker"] == bookmaker].copy() if not df_open.empty else pd.DataFrame()
             df_close_b = df_close[df_close["bookmaker"] == bookmaker].copy() if not df_close.empty else pd.DataFrame()
@@ -124,7 +124,7 @@ with tab_odds:
                     lambda x: f"{x:+.2f}"
                 )
                 disp_oc = merged[["selection", "line", "odds_open", "odds_close", "Pohyb"]].copy()
-                disp_oc.columns = ["Výběr", "Linie", "Opening", "Closing", "Pohyb"]
+                disp_oc.columns = ["Výběr", "Linie", "Opening", "Poslední", "Pohyb"]
 
                 def _color_pohyb(val: str) -> str:
                     if str(val).startswith("+"):
@@ -133,14 +133,14 @@ with tab_odds:
                         return "color:#ef5350;font-weight:bold"
                     return ""
 
-                st.markdown("### Opening vs Closing")
+                st.markdown("### Opening vs Poslední kurz")
                 st.dataframe(
                     disp_oc.style
                         .map(_color_pohyb, subset=["Pohyb"])
-                        .format({"Opening": "{:.2f}", "Closing": "{:.2f}"}, na_rep="—"),
+                        .format({"Opening": "{:.2f}", "Poslední": "{:.2f}"}, na_rep="—"),
                     use_container_width=True, hide_index=True,
                 )
-                st.caption("Opening = první zaznamenaný kurz  ·  Closing = poslední kurz před výkopem")
+                st.caption("Opening = první zaznamenaný kurz  ·  Poslední = poslední zaznamenaný kurz (shoduje se s posledním řádkem tabulky výše)")
 
 # ── Tab: Změny kurzů ──────────────────────────────────────────────────────────
 with tab_changes:
