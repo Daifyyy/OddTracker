@@ -2,7 +2,8 @@ name: Auto Fetch Odds
 
 on:
   schedule:
-    - cron: '0 * * * *'   # every hour
+    - cron: '0 * * * *'    # každou celou hodinu
+    - cron: '30 * * * *'   # každých 30 minut (druhý spuštění v půl)
   workflow_dispatch:        # manual trigger from GitHub UI → Actions tab
 
 jobs:
