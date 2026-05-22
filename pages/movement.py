@@ -54,7 +54,7 @@ with st.container(border=True):
             format_func=lambda k: MARKETS_AVAILABLE.get(k, k),
         )
 
-filtered = df_snap[
+filtered_all = df_snap[
     (df_snap["market"] == market) &
     (df_snap["bookmaker"] == "pinnacle")
 ].copy()
@@ -62,8 +62,11 @@ filtered = df_snap[
 match_info = df_all[df_all["id"] == match_id].iloc[0]
 commence_time = match_info["commence_time"]
 
+filtered = filtered_all[filtered_all["snapshot_time"] <= commence_time]
+post_kickoff_count = len(filtered_all) - len(filtered)
+
 if filtered.empty:
-    st.info("Pro tento zápas a trh nejsou žádné Pinnacle snapshoty.")
+    st.info("Pro tento zápas a trh nejsou žádné pre-kickoff Pinnacle snapshoty.")
     st.stop()
 
 available_lines = sorted(filtered["line"].dropna().unique().tolist())
@@ -93,10 +96,11 @@ st.dataframe(
     pivot.style.apply(highlight_pivot, axis=None).format("{:.2f}", na_rep="—"),
     use_container_width=True,
 )
-st.caption(
-    "🟢 Kurz vzrostl &nbsp;|&nbsp; 🔴 Kurz klesl &nbsp;|&nbsp; Každý řádek = jeden fetch · "
-    f"Výkop: {commence_time[:16].replace('T', ' ')} UTC — řádky po výkopu jsou live kurzy"
-)
+ko_str = commence_time[:16].replace("T", " ")
+caption = f"🟢 Kurz vzrostl &nbsp;|&nbsp; 🔴 Kurz klesl &nbsp;|&nbsp; Poslední řádek = Closing · Výkop: {ko_str} UTC"
+if post_kickoff_count > 0:
+    caption += f" &nbsp;|&nbsp; ⚠️ {post_kickoff_count} post-kickoff snapshot(ů) skryto — live kurzy nejsou relevantní pro analýzu"
+st.caption(caption)
 
 # ── Opening vs Closing ────────────────────────────────────────────────────────
 st.markdown("### Opening vs Closing kurzy")
