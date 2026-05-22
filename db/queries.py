@@ -341,3 +341,50 @@ def upsert_result(match_id: str, home_score: int | None, away_score: int | None,
             (match_id, home_score, away_score, corners_home, corners_away, total, now),
         )
     conn.close()
+
+
+# ── movement overview ──────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=60)
+def get_movement_overview() -> pd.DataFrame:
+    """Opening vs current Pinnacle odds for all active matches.
+
+    Returns one row per (match, market, selection, line) with opening_odds
+    (first snapshot) and current_odds (latest snapshot).
+    """
+    conn = get_connection()
+    df = _df(conn, """
+        SELECT
+            agg.match_id, agg.home_team, agg.away_team, agg.sport_key, agg.commence_time,
+            agg.market, agg.selection, agg.line,
+            o1.odds AS opening_odds,
+            o2.odds AS current_odds
+        FROM (
+            SELECT
+                o.match_id, m.home_team, m.away_team, m.sport_key, m.commence_time,
+                o.market, o.selection, o.line,
+                MIN(o.snapshot_time) AS first_snap,
+                MAX(o.snapshot_time) AS last_snap
+            FROM odds_snapshots o
+            JOIN matches m ON o.match_id = m.id
+            WHERE o.bookmaker = 'pinnacle' AND m.is_completed = 0
+            GROUP BY o.match_id, o.market, o.selection, o.line
+        ) agg
+        JOIN odds_snapshots o1
+            ON  o1.match_id      = agg.match_id
+            AND o1.bookmaker     = 'pinnacle'
+            AND o1.market        = agg.market
+            AND o1.selection     = agg.selection
+            AND o1.snapshot_time = agg.first_snap
+            AND (o1.line = agg.line OR (o1.line IS NULL AND agg.line IS NULL))
+        JOIN odds_snapshots o2
+            ON  o2.match_id      = agg.match_id
+            AND o2.bookmaker     = 'pinnacle'
+            AND o2.market        = agg.market
+            AND o2.selection     = agg.selection
+            AND o2.snapshot_time = agg.last_snap
+            AND (o2.line = agg.line OR (o2.line IS NULL AND agg.line IS NULL))
+        ORDER BY agg.commence_time ASC, agg.market, agg.selection
+    """)
+    conn.close()
+    return df
