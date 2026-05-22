@@ -6,7 +6,7 @@ from db.queries import (
     get_opening_odds, get_closing_odds, get_line_changes_df,
 )
 from config import MARKETS_AVAILABLE
-from pages.utils import highlight_pivot, sport_label_map
+from pages.utils import highlight_pivot, sport_label_map, to_local_str
 
 st.title("Vývoj kurzů")
 st.caption("Tabulkový přehled pohybu kurzů v čase pro vybraný zápas a trh.")
@@ -75,12 +75,14 @@ if filtered["line"].notna().any():
     filtered["col"] = filtered["col"] + " @" + filtered["line"].apply(
         lambda x: str(x) if x is not None else ""
     )
-filtered["čas"] = filtered["snapshot_time"].str[11:16]
+
+filtered["čas"] = to_local_str(filtered["snapshot_time"])
+_tz_label = "Čas (Praha)"
 
 pivot = filtered.pivot_table(
     index="čas", columns="col", values="odds", aggfunc="first"
 )
-pivot.index.name   = "Čas (UTC)"
+pivot.index.name   = _tz_label
 pivot.columns.name = ""
 
 st.dataframe(
@@ -103,7 +105,7 @@ if not df_open.empty and not df_close.empty:
     )
     merged["Pohyb"] = (merged["odds_close"] - merged["odds_open"]).round(3)
     merged["Pohyb str"] = merged["Pohyb"].apply(
-        lambda x: f"+{x:.3f}" if x > 0 else f"{x:.3f}"
+        lambda x: f"+{x:.2f}" if x > 0 else f"{x:.2f}"
     )
     display = merged[["bookmaker", "selection", "line",
                        "odds_open", "odds_close", "Pohyb str"]].copy()
@@ -141,7 +143,7 @@ if not df_lc.empty:
         "old_line", "new_line", "old_odds", "new_odds",
         "odds_delta", "minutes_to_kickoff",
     ]].copy()
-    display_lc["detected_at"]        = display_lc["detected_at"].str[11:16]
+    display_lc["detected_at"] = to_local_str(display_lc["detected_at"])
     display_lc["minutes_to_kickoff"] = display_lc["minutes_to_kickoff"].apply(
         lambda x: f"{int(x)} min" if x is not None else "—"
     )
@@ -158,6 +160,8 @@ if not df_lc.empty:
             return ""
 
     st.dataframe(
-        display_lc.style.map(_color_delta, subset=["Δ kurz"]),
+        display_lc.style
+            .map(_color_delta, subset=["Δ kurz"])
+            .format({"Starý kurz": "{:.2f}", "Nový kurz": "{:.2f}", "Δ kurz": "{:+.2f}"}, na_rep="—"),
         use_container_width=True, hide_index=True,
     )

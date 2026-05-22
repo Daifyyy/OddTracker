@@ -5,7 +5,7 @@ from db.queries import (
     get_matches_df, get_latest_odds_per_book, get_snapshots_df,
 )
 from config import MARKETS_AVAILABLE
-from pages.utils import highlight_pivot, sport_label_map
+from pages.utils import highlight_pivot, sport_label_map, to_local_str
 
 st.title("Porovnání bookmakrů")
 st.caption("Aktuální kurzy napříč bookmakery a historický vývoj pro jeden výběr.")
@@ -125,12 +125,12 @@ hist = df_snap[
     (df_snap["selection"] == selected_sel) &
     (df_snap["bookmaker"].isin(selected_books) if selected_books else True)
 ].copy()
-hist["čas"] = hist["snapshot_time"].str[11:16]
+hist["čas"] = to_local_str(hist["snapshot_time"])
 
 pivot_hist = hist.pivot_table(
     index="čas", columns="bookmaker", values="odds", aggfunc="first"
 )
-pivot_hist.index.name   = "Čas (UTC)"
+pivot_hist.index.name   = "Čas (Praha)"
 pivot_hist.columns.name = ""
 
 st.dataframe(

@@ -4,7 +4,7 @@ import streamlit as st
 from db.queries import get_clv_df, get_matches_df
 from analytics.results import clv_summary
 from config import MARKETS_AVAILABLE
-from pages.utils import sport_label_map
+from pages.utils import sport_label_map, to_local_str
 
 st.title("CLV — Closing Line Value")
 st.caption("Porovnání opening kurzů s closing kurzy. Kladné CLV = tvůj kurz byl lepší než závěrečný.")
@@ -87,7 +87,7 @@ display = df[[
     "clv_raw", "clv_pct", "tracked_at",
 ]].copy()
 display["Zápas"]      = display["home_team"] + " vs " + display["away_team"]
-display["tracked_at"] = display["tracked_at"].str[:16].str.replace("T", " ")
+display["tracked_at"] = to_local_str(display["tracked_at"])
 display["market"]     = display["market"].map(lambda k: MARKETS_AVAILABLE.get(k, k))
 display = display[[
     "Zápas", "bookmaker", "market", "selection", "line",

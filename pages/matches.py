@@ -385,25 +385,16 @@ if df_all.empty:
     st.info("Žádné zápasy. Fetchni první preset nebo použij jednorázový fetch.")
 else:
     with st.container(border=True):
-        fc1, fc2, fc3 = st.columns(3)
+        fc1, fc2 = st.columns(2)
         with fc1:
-            available_sports = sorted(labels.keys())
-            filter_sport = st.multiselect(
-                "Filtrovat soutěž", available_sports,
-                format_func=lambda k: labels.get(k, k),
-                placeholder="Všechny soutěže",
-            )
-        with fc2:
             filter_status = st.selectbox("Status", ["Vše", "Nadcházející", "Dokončené"])
-        with fc3:
+        with fc2:
             filter_hours = st.number_input(
                 "Do KO max (h)", min_value=0, max_value=999, value=0,
                 help="0 = bez omezení",
             )
 
     df = df_all.copy()
-    if filter_sport:
-        df = df[df["sport_key"].isin(filter_sport)]
     if filter_status == "Nadcházející":
         df = df[df["is_completed"] == 0]
     elif filter_status == "Dokončené":
@@ -425,15 +416,22 @@ else:
             "🟡 Brzy" if 0 < (r["Do KO (h)"] or 99) < 2 else "⏳ Nadcházející"
         ), axis=1
     )
-    df["Soutěž"]         = df["sport_key"].map(lambda k: labels.get(k, k))
-    df["Zápas"]          = df["home_team"] + " vs " + df["away_team"]
-    df["Výkop (UTC)"]    = df["commence_time"].str[:16].str.replace("T", " ")
-    df["Poslední fetch"] = df["last_seen_at"].str[:16].str.replace("T", " ")
+    df["Zápas"]       = df["home_team"] + " vs " + df["away_team"]
+    df["Výkop (UTC)"] = df["commence_time"].str[:16].str.replace("T", " ")
 
-    st.dataframe(
-        df[["Soutěž", "Zápas", "Výkop (UTC)", "Do KO (h)", "Status", "Poslední fetch"]],
-        use_container_width=True, hide_index=True,
-    )
     total = len(df)
     done  = int(df["is_completed"].sum())
     st.caption(f"{total} zápasů · {done} dokončeno · {total - done} nadcházejících")
+
+    for sport_key, group in df.groupby("sport_key"):
+        league_name = labels.get(sport_key, sport_key)
+        with st.expander(f"🏆 {league_name}  ({len(group)})", expanded=True):
+            for _, row in group.iterrows():
+                c1, c2, c3 = st.columns([4, 2, 1])
+                ko_str = f"· ⏰ {row['Do KO (h)']:.1f}h" if row["Do KO (h)"] is not None else ""
+                c1.write(f"**{row['Zápas']}**  {row['Výkop (UTC)']} {ko_str}")
+                c2.write(row["Status"])
+                if c3.button("Detail →", key=f"detail_{row['id']}"):
+                    st.session_state.selected_match_id = row["id"]
+                    st.session_state.selected_match_label = row["Zápas"]
+                    st.switch_page("pages/match_detail.py")

@@ -1,6 +1,15 @@
 import pandas as pd
 
 
+def to_local_str(series: pd.Series) -> pd.Series:
+    """Convert UTC ISO timestamp series to Prague local time 'DD.MM HH:MM'."""
+    ts = pd.to_datetime(series, utc=True)
+    try:
+        return ts.dt.tz_convert("Europe/Prague").dt.strftime("%d.%m %H:%M")
+    except Exception:
+        return ts.dt.strftime("%d.%m %H:%M")
+
+
 def highlight_pivot(df: pd.DataFrame) -> pd.DataFrame:
     """Highlight cells where value changed vs previous row (green=up, red=down)."""
     styles = pd.DataFrame("", index=df.index, columns=df.columns)

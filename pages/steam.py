@@ -1,6 +1,7 @@
 import streamlit as st
 
 from db.queries import get_steam_moves_df
+from pages.utils import to_local_str
 
 st.title("Steam moves")
 st.caption("Detekce koordinovaných pohybů kurzů u více bookmakrů současně — signál ostrých peněz.")
@@ -42,7 +43,7 @@ display = df[[
     "direction", "minutes_to_kickoff",
 ]].copy()
 
-display["detected_at"] = display["detected_at"].str[:16].str.replace("T", " ")
+display["detected_at"] = to_local_str(display["detected_at"])
 display["Zápas"]       = display["home_team"] + " vs " + display["away_team"]
 display["minutes_to_kickoff"] = display["minutes_to_kickoff"].apply(
     lambda x: f"{int(x)} min" if x is not None else "—"
@@ -63,7 +64,9 @@ def _color_dir(val: str) -> str:
 col_tbl, col_exp = st.columns([5, 1])
 with col_tbl:
     st.dataframe(
-        display.style.map(_color_dir, subset=["Směr"]),
+        display.style
+            .map(_color_dir, subset=["Směr"])
+            .format({"Prům. Δ": "{:+.2f}"}, na_rep="—"),
         use_container_width=True, hide_index=True,
     )
 with col_exp:

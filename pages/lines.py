@@ -2,7 +2,7 @@ import streamlit as st
 
 from db.queries import get_matches_df, get_line_changes_df
 from config import MARKETS_AVAILABLE
-from pages.utils import sport_label_map
+from pages.utils import sport_label_map, to_local_str
 
 st.title("Změny kurzů")
 st.caption("Přehled detekovaných pohybů kurzů a změn linií mezi snapshoty.")
@@ -72,7 +72,7 @@ display = df[[
     "odds_delta", "minutes_to_kickoff",
 ]].copy()
 
-display["detected_at"]        = display["detected_at"].str[:16].str.replace("T", " ")
+display["detected_at"] = to_local_str(display["detected_at"])
 display["market"]             = display["market"].map(lambda k: MARKETS_AVAILABLE.get(k, k))
 display["minutes_to_kickoff"] = display["minutes_to_kickoff"].apply(
     lambda x: f"{int(x)} min" if x is not None else "—"
@@ -92,7 +92,9 @@ def _color_delta(val) -> str:
 col_tbl, col_exp = st.columns([5, 1])
 with col_tbl:
     st.dataframe(
-        display.style.map(_color_delta, subset=["Δ kurz"]),
+        display.style
+            .map(_color_delta, subset=["Δ kurz"])
+            .format({"Starý kurz": "{:.2f}", "Nový kurz": "{:.2f}", "Δ kurz": "{:+.2f}"}, na_rep="—"),
         use_container_width=True, hide_index=True,
     )
 with col_exp:
