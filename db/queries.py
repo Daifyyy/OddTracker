@@ -193,15 +193,16 @@ def get_snapshots_df(match_id: str, market: str | None = None,
 
 @st.cache_data(ttl=60)
 def get_opening_odds(match_id: str, market: str) -> pd.DataFrame:
+    """First snapshot per bookmaker — each book's own opening time."""
     conn = get_connection()
     df = _df(
         conn,
         """SELECT bookmaker, market, selection, line, odds, snapshot_time
-           FROM odds_snapshots
+           FROM odds_snapshots o
            WHERE match_id=? AND market=?
              AND snapshot_time=(
                SELECT MIN(snapshot_time) FROM odds_snapshots
-               WHERE match_id=? AND market=?)""",
+               WHERE match_id=? AND market=? AND bookmaker=o.bookmaker)""",
         (match_id, market, match_id, market),
     )
     conn.close()
@@ -210,10 +211,11 @@ def get_opening_odds(match_id: str, market: str) -> pd.DataFrame:
 
 @st.cache_data(ttl=60)
 def get_closing_odds(match_id: str, market: str) -> pd.DataFrame:
+    """Last snapshot per bookmaker strictly before kickoff."""
     conn = get_connection()
     df = _df(
         conn,
-        """SELECT bookmaker, market, selection, line, odds, snapshot_time
+        """SELECT o.bookmaker, o.market, o.selection, o.line, o.odds, o.snapshot_time
            FROM odds_snapshots o
            JOIN matches m ON o.match_id=m.id
            WHERE o.match_id=? AND o.market=?
@@ -223,6 +225,7 @@ def get_closing_odds(match_id: str, market: str) -> pd.DataFrame:
                FROM odds_snapshots o2
                JOIN matches m2 ON o2.match_id=m2.id
                WHERE o2.match_id=? AND o2.market=?
+                 AND o2.bookmaker=o.bookmaker
                  AND o2.snapshot_time <= m2.commence_time)""",
         (match_id, market, match_id, market),
     )
@@ -386,7 +389,8 @@ def get_movement_overview() -> pd.DataFrame:
                 o.match_id, m.home_team, m.away_team, m.sport_key, m.commence_time,
                 o.market, o.selection, o.line,
                 MIN(o.snapshot_time) AS first_snap,
-                MAX(o.snapshot_time) AS last_snap
+                MAX(CASE WHEN o.snapshot_time <= m.commence_time
+                         THEN o.snapshot_time END) AS last_snap
             FROM odds_snapshots o
             JOIN matches m ON o.match_id = m.id
             WHERE o.bookmaker = 'pinnacle' AND m.is_completed = 0

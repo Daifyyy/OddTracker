@@ -69,12 +69,11 @@ with tab_odds:
 
         filt = df_snap[
             (df_snap["market"] == market) &
-            (df_snap["bookmaker"] == bookmaker) &
-            (df_snap["snapshot_time"] <= match_row["commence_time"])
+            (df_snap["bookmaker"] == bookmaker)
         ].copy()
 
         if filt.empty:
-            st.info("Žádné snapshoty před výkopem. Všechny fetche proběhly po začátku zápasu.")
+            st.info("Žádné snapshoty pro tento bookmaker a trh.")
         else:
             available_lines = sorted(filt["line"].dropna().unique().tolist())
             selected_line = None
@@ -103,7 +102,11 @@ with tab_odds:
                     .format("{:.2f}", na_rep="—"),
                 use_container_width=True,
             )
-            st.caption("🟢 Kurz vzrostl  |  🔴 Kurz klesl  |  Každý řádek = jeden fetch")
+            commence_str = match_row["commence_time"][:16].replace("T", " ")
+            st.caption(
+                f"🟢 Kurz vzrostl  |  🔴 Kurz klesl  |  Každý řádek = jeden fetch  "
+                f"|  Výkop: {commence_str} UTC — řádky po výkopu jsou live kurzy"
+            )
 
             df_open  = get_opening_odds(match_id, market)
             df_close = get_closing_odds(match_id, market)
