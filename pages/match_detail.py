@@ -2,7 +2,7 @@ import pandas as pd
 import streamlit as st
 
 from db.queries import (
-    get_matches_df, get_snapshots_df, get_opening_odds, get_last_odds,
+    get_matches_df, get_snapshots_df, get_opening_odds, get_closing_odds,
     get_line_changes_df, get_steam_moves_df, get_clv_df,
 )
 from config import MARKETS_AVAILABLE
@@ -69,11 +69,12 @@ with tab_odds:
 
         filt = df_snap[
             (df_snap["market"] == market) &
-            (df_snap["bookmaker"] == bookmaker)
+            (df_snap["bookmaker"] == bookmaker) &
+            (df_snap["snapshot_time"] <= match_row["commence_time"])
         ].copy()
 
         if filt.empty:
-            st.info("Žádná data pro tuto kombinaci.")
+            st.info("Žádné snapshoty před výkopem. Všechny fetche proběhly po začátku zápasu.")
         else:
             available_lines = sorted(filt["line"].dropna().unique().tolist())
             selected_line = None
@@ -105,7 +106,7 @@ with tab_odds:
             st.caption("🟢 Kurz vzrostl  |  🔴 Kurz klesl  |  Každý řádek = jeden fetch")
 
             df_open  = get_opening_odds(match_id, market)
-            df_close = get_last_odds(match_id, market)
+            df_close = get_closing_odds(match_id, market)
 
             df_open_b  = df_open[df_open["bookmaker"] == bookmaker].copy() if not df_open.empty else pd.DataFrame()
             df_close_b = df_close[df_close["bookmaker"] == bookmaker].copy() if not df_close.empty else pd.DataFrame()
@@ -124,7 +125,7 @@ with tab_odds:
                     lambda x: f"{x:+.2f}"
                 )
                 disp_oc = merged[["selection", "line", "odds_open", "odds_close", "Pohyb"]].copy()
-                disp_oc.columns = ["Výběr", "Linie", "Opening", "Poslední", "Pohyb"]
+                disp_oc.columns = ["Výběr", "Linie", "Opening", "Closing", "Pohyb"]
 
                 def _color_pohyb(val: str) -> str:
                     if str(val).startswith("+"):
@@ -133,14 +134,14 @@ with tab_odds:
                         return "color:#ef5350;font-weight:bold"
                     return ""
 
-                st.markdown("### Opening vs Poslední kurz")
+                st.markdown("### Opening vs Closing")
                 st.dataframe(
                     disp_oc.style
                         .map(_color_pohyb, subset=["Pohyb"])
-                        .format({"Opening": "{:.2f}", "Poslední": "{:.2f}"}, na_rep="—"),
+                        .format({"Opening": "{:.2f}", "Closing": "{:.2f}"}, na_rep="—"),
                     use_container_width=True, hide_index=True,
                 )
-                st.caption("Opening = první zaznamenaný kurz  ·  Poslední = poslední zaznamenaný kurz (shoduje se s posledním řádkem tabulky výše)")
+                st.caption("Opening = první snapshot · Closing = poslední snapshot před výkopem · Oba odpovídají prvnímu/poslednímu řádku tabulky výše")
 
 # ── Tab: Změny kurzů ──────────────────────────────────────────────────────────
 with tab_changes:

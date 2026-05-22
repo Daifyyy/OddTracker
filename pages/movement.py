@@ -3,7 +3,7 @@ import streamlit as st
 
 from db.queries import (
     get_matches_df, get_snapshots_df,
-    get_opening_odds, get_last_odds, get_line_changes_df,
+    get_opening_odds, get_closing_odds, get_line_changes_df,
 )
 from config import MARKETS_AVAILABLE
 from pages.utils import highlight_pivot, sport_label_map, to_local_str
@@ -63,8 +63,13 @@ filtered = df_snap[
     (df_snap["bookmaker"].isin(selected_books))
 ].copy()
 
+# Oříznout na snapshoty před výkopem — post-kickoff kurzy nejsou closing
+match_info = df_all[df_all["id"] == match_id].iloc[0]
+commence_time = match_info["commence_time"]
+filtered = filtered[filtered["snapshot_time"] <= commence_time]
+
 if filtered.empty:
-    st.info("Žádná data pro tento filtr.")
+    st.info("Žádné snapshoty před výkopem. Všechny fetche proběhly po začátku zápasu.")
     st.stop()
 
 available_lines = sorted(filtered["line"].dropna().unique().tolist())
@@ -100,7 +105,7 @@ st.caption("🟢 Kurz vzrostl &nbsp;|&nbsp; 🔴 Kurz klesl &nbsp;|&nbsp; Každ�
 st.markdown("### Opening vs Closing kurzy")
 
 df_open  = get_opening_odds(match_id, market)
-df_close = get_last_odds(match_id, market)
+df_close = get_closing_odds(match_id, market)
 
 if not df_open.empty and not df_close.empty:
     merged = df_open.merge(
@@ -114,7 +119,7 @@ if not df_open.empty and not df_close.empty:
     )
     display = merged[["bookmaker", "selection", "line",
                        "odds_open", "odds_close", "Pohyb str"]].copy()
-    display.columns = ["Bookmaker", "Výběr", "Linie", "Opening", "Poslední", "Pohyb"]
+    display.columns = ["Bookmaker", "Výběr", "Linie", "Opening", "Closing", "Pohyb"]
 
     def _color_pohyb(val: str) -> str:
         if str(val).startswith("+"):
@@ -126,12 +131,12 @@ if not df_open.empty and not df_close.empty:
     st.dataframe(
         display.style
             .map(_color_pohyb, subset=["Pohyb"])
-            .format({"Opening": "{:.2f}", "Poslední": "{:.2f}"}, na_rep="—"),
+            .format({"Opening": "{:.2f}", "Closing": "{:.2f}"}, na_rep="—"),
         use_container_width=True, hide_index=True,
     )
-    st.caption("Opening = první zaznamenaný kurz · Poslední = poslední zaznamenaný kurz (shoduje se s posledním řádkem tabulky výše)")
+    st.caption("Opening = první snapshot · Closing = poslední snapshot před výkopem · Pivot výše zobrazuje jen pre-kickoff snapshoty")
 elif not df_open.empty:
-    st.info("Pouze jeden snapshot — pro zobrazení pohybu jsou potřeba alespoň 2 fetche.")
+    st.info("Closing kurzy nejsou k dispozici — všechny snapshoty jsou po výkopu.")
 else:
     st.info("Žádné snapshoty pro tuto kombinaci.")
 
