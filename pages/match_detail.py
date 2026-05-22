@@ -127,8 +127,14 @@ with tab_odds:
                 merged["Pohyb"] = (merged["odds_close"] - merged["odds_open"]).apply(
                     lambda x: f"{x:+.2f}"
                 )
-                disp_oc = merged[["selection", "line", "odds_open", "odds_close", "Pohyb"]].copy()
-                disp_oc.columns = ["Výběr", "Linie", "Opening", "Closing", "Pohyb"]
+                merged["čas_open"]  = to_local_str(merged["snapshot_time_open"])
+                merged["čas_close"] = to_local_str(merged["snapshot_time_close"])
+                disp_oc = merged[["selection", "line",
+                                   "čas_open", "odds_open",
+                                   "čas_close", "odds_close", "Pohyb"]].copy()
+                disp_oc.columns = ["Výběr", "Linie",
+                                   "Čas Opening", "Opening",
+                                   "Čas Closing", "Closing", "Pohyb"]
 
                 def _color_pohyb(val: str) -> str:
                     if str(val).startswith("+"):
@@ -144,7 +150,7 @@ with tab_odds:
                         .format({"Opening": "{:.2f}", "Closing": "{:.2f}"}, na_rep="—"),
                     use_container_width=True, hide_index=True,
                 )
-                st.caption("Opening = první snapshot · Closing = poslední snapshot před výkopem · Oba odpovídají prvnímu/poslednímu řádku tabulky výše")
+                st.caption("Closing = poslední fetch PŘED výkopem — v pivotu výše může být poslední řádek post-kickoff live kurz")
 
 # ── Tab: Změny kurzů ──────────────────────────────────────────────────────────
 with tab_changes:

@@ -114,9 +114,14 @@ if not df_open.empty and not df_close.empty:
     merged["Pohyb str"] = merged["Pohyb"].apply(
         lambda x: f"+{x:.2f}" if x > 0 else f"{x:.2f}"
     )
+    merged["čas_open"]  = to_local_str(merged["snapshot_time_open"])
+    merged["čas_close"] = to_local_str(merged["snapshot_time_close"])
     display = merged[["bookmaker", "selection", "line",
-                       "odds_open", "odds_close", "Pohyb str"]].copy()
-    display.columns = ["Bookmaker", "Výběr", "Linie", "Opening", "Closing", "Pohyb"]
+                       "čas_open", "odds_open",
+                       "čas_close", "odds_close", "Pohyb str"]].copy()
+    display.columns = ["Bookmaker", "Výběr", "Linie",
+                       "Čas Opening", "Opening",
+                       "Čas Closing", "Closing", "Pohyb"]
 
     def _color_pohyb(val: str) -> str:
         if str(val).startswith("+"):
@@ -131,7 +136,7 @@ if not df_open.empty and not df_close.empty:
             .format({"Opening": "{:.2f}", "Closing": "{:.2f}"}, na_rep="—"),
         use_container_width=True, hide_index=True,
     )
-    st.caption("Opening = první fetch · Closing = poslední fetch PŘED výkopem · Pivot výše zobrazuje všechny fetche včetně post-kickoff")
+    st.caption("Closing = poslední fetch PŘED výkopem (ne poslední řádek v pivotu — ten může být post-kickoff live kurz)")
 elif not df_open.empty:
     st.info("Closing kurzy nejsou k dispozici — všechny snapshoty jsou po výkopu.")
 else:
